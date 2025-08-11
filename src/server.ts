@@ -25,12 +25,12 @@ static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, StoredPr
     const { query, params } = call.request;
 
     const result = await sql.query(query, params);
-    if(result.rowCount === 0) {
-      return callback({
-        code: grpc.status.NOT_FOUND,
-        details: 'No data found for the given query.'
-      });
-    }
+    // if(result.rowCount === 0) {
+    //   return callback({
+    //     code: grpc.status.NOT_FOUND,
+    //     details: 'No data found for the given query.'
+    //   });
+    // }
     callback(null,  {result: result.rows} );
   } catch (error: any) {
     callback({
