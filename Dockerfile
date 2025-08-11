@@ -22,6 +22,9 @@ RUN tsc
 # Stage 2: Production
 FROM node:22-alpine
 
+# Install shadow package for user management
+RUN apk add --no-cache shadow
+
 # Set the working directory
 WORKDIR /app
 
@@ -30,13 +33,24 @@ RUN mkdir -p /tmp/grpc
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/.env ./.env
 
 # Copy the .proto files to the dist directory
 COPY --from=builder /app/src/proto /app/dist/proto
 
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+
+# Make the entrypoint script executable
+RUN chmod +x /entrypoint.sh
+
+# Install su-exec for better user switching
+RUN apk add --no-cache su-exec
+
 # Expose the port (if applicable)
 EXPOSE 50051
+
+# Set the entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Command to run the application
 CMD ["node", "dist/server.js"]
