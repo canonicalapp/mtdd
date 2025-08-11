@@ -65,6 +65,20 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Deploy with:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull the image" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -d --name xdoc-api -p 3000:3000 --env-file .env ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Run with custom user and environment" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name mtdd-api -p 50051:50051 \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e USER_UID=1001 \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e USER_NAME=appuser \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e ENV_FILE_CONTENT='DB_CONFIG={\"type\":\"postgres\",\"host\":\"localhost\",\"user\":\"postgres\", \"password\":\"P@ssw0rd\",\"database\":\"testd\"}' \\" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Or mount .env file instead" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d --name mtdd-api -p 50051:50051 \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e USER_UID=1001 \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -e USER_NAME=appuser \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -v \"\$(pwd)/.env:/app/.env:ro\" \\" >> $GITHUB_STEP_SUMMARY
+          echo "  ${{ env.REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

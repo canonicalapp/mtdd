@@ -34,9 +34,6 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-# Copy the .proto files to the dist directory
-COPY --from=builder /app/src/proto /app/dist/proto
-
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 
