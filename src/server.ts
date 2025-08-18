@@ -103,7 +103,7 @@ export interface StoredProcResponse {
 }
 
 
-process.loadEnvFile('./.env');
+//process.loadEnvFile('./.env');
 
 const dbServiceDefinition = {
   executeQuery: {
