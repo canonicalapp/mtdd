@@ -2,7 +2,7 @@ import * as grpc from '@grpc/grpc-js';
 //import { DatabaseFacade } from '@advcomm/dbfacade';
 import { Pool } from 'pg';
 
-process.loadEnvFile('.env');
+//process.loadEnvFile('.env');
 
 var config= JSON.parse(process.env.DB_CONFIG as string);
 
