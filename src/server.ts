@@ -1,8 +1,9 @@
 import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
 //import { DatabaseFacade } from '@advcomm/dbfacade';
 import { Pool } from 'pg';
 
-//process.loadEnvFile('.env');
+process.loadEnvFile('.env');
 
 var config= JSON.parse(process.env.DB_CONFIG  as string);
 
@@ -105,6 +106,20 @@ export interface StoredProcResponse {
 
 //process.loadEnvFile('./.env');
 
+// Load proto definition
+const PROTO_PATH = __dirname + '/db.proto';
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+});
+
+const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any;
+const dbService = protoDescriptor.DB.DBService;
+
+// Keep the original service definition for backward compatibility
 const dbServiceDefinition = {
   executeQuery: {
     path: '/DB.DBService/executeQuery',
@@ -114,6 +129,9 @@ const dbServiceDefinition = {
     requestDeserialize: (buffer: Buffer) => JSON.parse(buffer.toString()),
     responseSerialize: (value: any) => Buffer.from(JSON.stringify(value)),
     responseDeserialize: (buffer: Buffer) => JSON.parse(buffer.toString()),
+    requestType: Object, // For reflection compatibility
+    responseType: Object, // For reflection compatibility
+    options: {} // For reflection compatibility
   },
   listenToChannel: {
     path: '/DB.DBService/listenToChannel',
@@ -123,6 +141,9 @@ const dbServiceDefinition = {
     requestDeserialize: (buffer: Buffer) => JSON.parse(buffer.toString()),
     responseSerialize: (value: any) => Buffer.from(JSON.stringify(value)),
     responseDeserialize: (buffer: Buffer) => JSON.parse(buffer.toString()),
+    requestType: Object, // For reflection compatibility
+    responseType: Object, // For reflection compatibility
+    options: {} // For reflection compatibility
   }
 };
 
@@ -141,16 +162,23 @@ function main() {
   
   const server = new grpc.Server();
 
+  // Enable reflection using the proto file
+  try {
+    const { ReflectionService } = require('@grpc/reflection');
+    const reflection = new ReflectionService(packageDefinition);
+    reflection.addToServer(server);
+    console.log('gRPC reflection enabled');
+  } catch (error) {
+    console.log('Reflection service not available, grpcurl may not work without proto files');
+  }
 
-  // Add the service to the server
-  server.addService(dbServiceDefinition, {
-    // getCountryIP: CountryService.getCountryIP.bind(countryService),
-    // getProductTenant: CountryService.getProductTenant.bind(countryService),
+  // Add the service to the server - use proto-based service definition for reflection
+  server.addService(dbService.service, {
     executeQuery: DBService.executeQuery,
-     listenToChannel: DBService.listenToChannel,
+    listenToChannel: DBService.listenToChannel,
   });
 
-  const port = '127.0.0.1:' + (process.env.PORT ? process.env.PORT : '50051');
+  const port = '0.0.0.0:' + (process.env.PORT ? process.env.PORT : '50051');
   server.bindAsync(port, grpc.ServerCredentials.createInsecure(), (err, port) => {
     if (err) {
       console.error(err);

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package DB;
+
+service DBService {
+  rpc executeQuery(StoredProcRequest) returns (StoredProcResponse);
+  rpc listenToChannel(ChannelRequest) returns (stream ChannelResponse);
+}
+
+message StoredProcRequest {
+  string query = 1;
+  repeated string params = 2;
+}
+
+message StoredProcResponse {
+  repeated string result = 1;
+}
+
+message ChannelRequest {
+  string channelName = 1;
+}
+
+message ChannelResponse {
+  string channelName = 1;
+  string data = 2;
+  string timestamp = 3;
+}

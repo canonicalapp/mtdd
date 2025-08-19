@@ -12,6 +12,7 @@
     "@advcomm/dbfacade": "^1.0.0",
     "@grpc/grpc-js": "^1.4.5",
     "@grpc/proto-loader": "^0.6.11",
+    "@grpc/reflection": "^1.0.4",
     "@types/node": "^22.15.2",
     "nodemon": "^3.1.10",
     "pg": "^8.16.3"
