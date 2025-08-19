@@ -33,6 +33,8 @@ static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, StoredPr
     // }
     callback(null,  {result: result.rows} );
   } catch (error: any) {
+    
+      console.error(error);
     callback({
       code: grpc.status.INTERNAL,
       details: error.message,
@@ -74,6 +76,7 @@ static async listenToChannel(call: grpc.ServerWritableStream<ChannelRequest, Cha
       });
 
     } catch (error: any) {
+      console.error(error);
       call.emit('error', {
         code: grpc.status.INTERNAL,
         details: error.message,
