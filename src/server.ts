@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 
 //process.loadEnvFile('.env');
 
-var config= JSON.parse(process.env.DB_CONFIG as string);
+var config= JSON.parse(process.env.DB_CONFIG  as string);
 
 var sql = new Pool({
             host: config.host,
@@ -150,7 +150,7 @@ function main() {
      listenToChannel: DBService.listenToChannel,
   });
 
-  const port = '127.0.0.1:'+ process.env.PORT || '50051';
+  const port = '127.0.0.1:' + (process.env.PORT ? process.env.PORT : '50051');
   server.bindAsync(port, grpc.ServerCredentials.createInsecure(), (err, port) => {
     if (err) {
       console.error(err);
