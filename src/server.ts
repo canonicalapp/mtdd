@@ -150,7 +150,7 @@ function main() {
      listenToChannel: DBService.listenToChannel,
   });
 
-  const port = '127.0.0.1:'+ process.env.PORT || '50051';
+  const port = '0.0.0.0:'+ process.env.PORT || '50051';
   server.bindAsync(port, grpc.ServerCredentials.createInsecure(), (err, port) => {
     if (err) {
       console.error(err);
