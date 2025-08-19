@@ -34,6 +34,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
+# Copy the proto file for gRPC reflection
+COPY --from=builder /app/src/db.proto ./dist/
+
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 
