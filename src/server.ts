@@ -1,6 +1,6 @@
 import * as grpc from '@grpc/grpc-js';
 //import { DatabaseFacade } from '@advcomm/dbfacade';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 //process.loadEnvFile('.env');
 
@@ -11,80 +11,155 @@ var sql = new Pool({
             user: config.user,
             password: config.password,
             database: config.database,
-            port: config.port || 5432
+            port: config.port || 5432,
+            max: config.max || 100,
+            idleTimeoutMillis: config.idleTimeoutMillis || 1000,
+            min: config.min || 0
         });
 
+// Connection pool event handlers
+sql.on('connect', (client: PoolClient) => {
+    console.log('New client connected to database');
+});
 
+sql.on('error', (err: Error) => {
+    console.error('Database pool error:', err);
+    // Don't exit process, just log the error
+});
+
+sql.on('remove', () => {
+    console.log('Client removed from pool');
+});
+
+const activeListeners = new Map<string, PoolClient>();
 
 export class DBService {
-  
-
-static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, StoredProcResponse>, callback: grpc.sendUnaryData<StoredProcResponse>) {
-
-  try {
-    const { query, params } = call.request;
-
-    const result = await sql.query(query, params);
-    // if(result.rowCount === 0) {
-    //   return callback({
-    //     code: grpc.status.NOT_FOUND,
-    //     details: 'No data found for the given query.'
-    //   });
-    // }
-    callback(null,  {result: result.rows} );
-  } catch (error: any) {
-    
-      console.error(error);
-    callback({
-      code: grpc.status.INTERNAL,
-      details: error.message,
-    });
-  }
-}
-static async listenToChannel(call: grpc.ServerWritableStream<ChannelRequest, ChannelResponse>) {
-    try {
-      const { channelName } = call.request;
-      
-      // Create a channel listener that sends data to the gRPC client
-      const channelListener = (data: any) => {
-        // Send the notification to the gRPC client
-        call.write({
-          channelName: channelName,
-          data: JSON.stringify(data),
-          timestamp: new Date().toISOString()
-        });
-      };
-
-      const client = await sql.connect();
-        await client.query(`LISTEN ${channelName}`);
-        client.on("notification", async (message: any) => {
-            channelListener(message);
-        });
-
-      // Start listening to the database channel
-      //DatabaseFacade.ListenToChannel(channelName, channelListener);
-
-      // Handle client disconnect
-      call.on('cancelled', () => {
-        console.log('Client disconnected, stopping channel listener');
-        // You might want to add a method to stop listening
-        // DatabaseFacade.StopListening(channelName, channelListener);
-      });
-
-      call.on('error', (error) => {
-        console.error('Stream error:', error);
-      });
-
-    } catch (error: any) {
-      console.error(error);
-      call.emit('error', {
-        code: grpc.status.INTERNAL,
-        details: error.message,
-      });
+    static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, StoredProcResponse>, callback: grpc.sendUnaryData<StoredProcResponse>) {
+        let client: PoolClient | null = null;
+        
+        try {
+            const { query, params } = call.request;
+            
+            // Get client from pool
+            client = await sql.connect();
+            const result = await client.query(query, params);
+            
+            callback(null, { result: result.rows });
+        } catch (error: any) {
+            console.error('Query execution error:', error);
+            callback({
+                code: grpc.status.INTERNAL,
+                details: error.message,
+            });
+        } finally {
+            // Always release the client back to pool
+            if (client) {
+                client.release();
+            }
+        }
     }
-  }
+
+    static async listenToChannel(call: grpc.ServerWritableStream<ChannelRequest, ChannelResponse>) {
+        let client: PoolClient | null = null;
+        const { channelName } = call.request;
+        
+        try {
+            // Get dedicated client for listening
+            client = await sql.connect();
+            
+            // Store for cleanup
+            const listenerId = `${channelName}_${Date.now()}`;
+            activeListeners.set(listenerId, client);
+            
+            const channelListener = (notification: any) => {
+                try {
+                    call.write({
+                        channelName: channelName,
+                        data: JSON.stringify(notification.payload || notification),
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (writeError) {
+                    console.error('Error writing to stream:', writeError);
+                }
+            };
+
+            await client.query(`LISTEN ${channelName}`);
+            client.on("notification", channelListener);
+
+            // Handle client disconnect
+            call.on('cancelled', async () => {
+                console.log(`Client disconnected from channel: ${channelName}`);
+                await cleanup();
+            });
+
+            call.on('error', async (error) => {
+                console.error('Stream error:', error);
+                await cleanup();
+            });
+
+            const cleanup = async () => {
+                try {
+                    if (client) {
+                        await client.query(`UNLISTEN ${channelName}`);
+                        client.removeAllListeners('notification');
+                        client.release();
+                        activeListeners.delete(listenerId);
+                    }
+                } catch (cleanupError) {
+                    console.error('Cleanup error:', cleanupError);
+                }
+            };
+
+        } catch (error: any) {
+            console.error('Channel listen error:', error);
+            if (client) {
+                client.release();
+            }
+            call.emit('error', {
+                code: grpc.status.INTERNAL,
+                details: error.message,
+            });
+        }
+    }
 }
 
+
+export async function checkDatabaseHealth(): Promise<boolean> {
+    try {
+        const result = await sql.query('SELECT 1');
+        return result.rows.length > 0;
+    } catch (error) {
+        console.error('Database health check failed:', error);
+        return false;
+    }
+}
+
+// Graceful shutdown handler
+async function gracefulShutdown(signal: string) {
+    console.log(`Received ${signal}, starting graceful shutdown...`);
+    
+    try {
+        // Close all active listeners
+        for (const [listenerId, client] of activeListeners.entries()) {
+            try {
+                await client.query('UNLISTEN *');
+                client.release();
+                activeListeners.delete(listenerId);
+            } catch (error) {
+                console.error(`Error cleaning up listener ${listenerId}:`, error);
+            }
+        }
+        
+        // Close the pool
+        await sql.end();
+        console.log('Database pool closed successfully');
+        
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during graceful shutdown:', error);
+        process.exit(1);
+    }
+}
 
 export interface ChannelRequest {
   channelName: string;
@@ -131,17 +206,20 @@ const dbServiceDefinition = {
 
 
 
-function main() {
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 
-   sql.query(`select 1+1 As Result`).then((res: any) => {
-    console.log('Database connection successful:', res.rows)    
-  }).catch((err: any) => {
-    console.error('Database connection error:', err);
-    process.exit(1);
-  });
- 
-  
+async function main() {
+try{
+    // Test database connection
+    const healthCheck = await checkDatabaseHealth();
+    if (!healthCheck) {
+        console.error('Database health check failed on startup');
+        process.exit(1);
+    }
+    console.log('Database connection successful');
+
   const server = new grpc.Server();
 
 
@@ -162,6 +240,10 @@ function main() {
     console.log(`Server is running on port: ${port}`);
     //server.start();
   });
+  } catch (error) {
+        console.error('Server startup error:', error);
+        process.exit(1);
+    }
 }
 
 main();
