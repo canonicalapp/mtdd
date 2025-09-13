@@ -1,8 +1,8 @@
 import * as grpc from '@grpc/grpc-js';
 //import { DatabaseFacade } from '@advcomm/dbfacade';
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, Query, QueryResult } from 'pg';
 
-//process.loadEnvFile('.env');
+process.loadEnvFile('.env');
 
 var config= JSON.parse(process.env.DB_CONFIG  as string);
 
@@ -34,7 +34,7 @@ sql.on('remove', () => {
 const activeListeners = new Map<string, PoolClient>();
 
 export class DBService {
-    static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, StoredProcResponse>, callback: grpc.sendUnaryData<StoredProcResponse>) {
+    static async executeQuery(call: grpc.ServerUnaryCall<StoredProcRequest, QueryResult<any>>, callback: grpc.sendUnaryData<QueryResult<any>>) {
         let client: PoolClient | null = null;
         
         try {
@@ -42,9 +42,9 @@ export class DBService {
             
             // Get client from pool
             client = await sql.connect();
-            const result = await client.query(query, params);
+            const result : QueryResult<any>= await client.query(query, params);
             
-            callback(null, { result: result.rows });
+            callback(null, result );
         } catch (error: any) {
             console.error('Query execution error:', error);
             callback({
@@ -177,7 +177,7 @@ export interface StoredProcRequest {
 }
 
 export interface StoredProcResponse {
-  result: any[];  // array of JSON strings
+  result: QueryResult<any>;  // array of JSON strings
 }
 
 
