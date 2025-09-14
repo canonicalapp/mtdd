@@ -2,7 +2,6 @@ import * as grpc from '@grpc/grpc-js';
 //import { DatabaseFacade } from '@advcomm/dbfacade';
 import { Pool, PoolClient, Query, QueryResult } from 'pg';
 
-process.loadEnvFile('.env');
 
 var config= JSON.parse(process.env.DB_CONFIG  as string);
 
