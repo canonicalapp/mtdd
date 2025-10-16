@@ -1,11 +1,28 @@
+# Environment files
 .env
+.env.*
+!.env.example
+!.env.*.example
+
+# Dependencies
 node_modules
+
+# Build output
+dist
+
+# Development files
 npm-debug.log
-Dockerfile
-.dockerignore
-.git
-.gitignore
-README.md
 .nyc_output
 coverage
 .vscode
+
+# Git and Docker
+.git
+.gitignore
+.github
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+*.md
