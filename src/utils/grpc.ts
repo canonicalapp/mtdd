@@ -10,5 +10,5 @@ import { DBServiceService } from '../generated/db_grpc_pb';
  * @returns Service definition with full type safety
  */
 export function getDBServiceDefinition() {
-  return DBServiceService;
+	return DBServiceService;
 }

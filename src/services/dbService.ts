@@ -5,10 +5,14 @@
 
 import * as grpc from '@grpc/grpc-js';
 import type { PoolClient, QueryResult } from 'pg';
-import { getPool, registerListener, unregisterListener } from '../db/connection';
-import { createLogger } from '../utils/logger';
-import * as db_pb from '../generated/db_pb';
+import {
+	getPool,
+	registerListener,
+	unregisterListener,
+} from '../db/connection';
 import type { IDBServiceServer } from '../generated/db_grpc_pb';
+import * as db_pb from '../generated/db_pb';
+import { createLogger } from '../utils/logger';
 
 const logger = createLogger('DBService');
 
@@ -16,163 +20,191 @@ const logger = createLogger('DBService');
  * Database service implementation with full type safety from generated protobuf
  */
 export const dbServiceImplementation: IDBServiceServer = {
-  /**
-   * Executes a database query with parameters
-   */
-  executeQuery: async (
-    call: grpc.ServerUnaryCall<db_pb.StoredProcRequest, db_pb.StoredProcResponse>,
-    callback: grpc.sendUnaryData<db_pb.StoredProcResponse>
-  ): Promise<void> => {
-    let client: PoolClient | null = null;
+	/**
+	 * Executes a database query with parameters
+	 */
+	executeQuery: async (
+		call: grpc.ServerUnaryCall<
+			db_pb.StoredProcRequest,
+			db_pb.StoredProcResponse
+		>,
+		callback: grpc.sendUnaryData<db_pb.StoredProcResponse>
+	): Promise<void> => {
+		let client: PoolClient | null = null;
 
-    try {
-      const request = call.request;
-      const query = request.getQuery();
-      const params = request.getParamsList();
+		try {
+			const request = call.request;
+			const query = request.getQuery();
+			const params = request.getParamsList();
 
-      // Validate input
-      if (!query || typeof query !== 'string') {
-        callback({
-          code: grpc.status.INVALID_ARGUMENT,
-          details: 'Query must be a non-empty string',
-        });
-        return;
-      }
+			// Validate input
+			if (!query || typeof query !== 'string') {
+				callback({
+					code: grpc.status.INVALID_ARGUMENT,
+					details: 'Query must be a non-empty string',
+				});
+				return;
+			}
 
-      if (!Array.isArray(params)) {
-        callback({
-          code: grpc.status.INVALID_ARGUMENT,
-          details: 'Params must be an array',
-        });
-        return;
-      }
+			if (!Array.isArray(params)) {
+				callback({
+					code: grpc.status.INVALID_ARGUMENT,
+					details: 'Params must be an array',
+				});
+				return;
+			}
 
-      // Parse params - each param is a JSON-encoded string
-      const parsedParams = params.map(param => {
-        try {
-          return JSON.parse(param);
-        } catch {
-          return param; // If not JSON, use as-is
-        }
-      });
+			// Parse params - each param is a JSON-encoded string
+			// Special handling for base64-encoded buffers (bytea)
+			const parsedParams = params.map((param) => {
+				try {
+					const parsed = JSON.parse(param);
+					return parsed;
+				} catch {
+					// If not JSON, check if it's a base64-encoded buffer
+					// Base64 strings are used for bytea parameters
+					if (
+						typeof param === 'string' &&
+						/^[A-Za-z0-9+/]+=*$/.test(param) &&
+						param.length > 20
+					) {
+						// Likely base64, decode to Buffer for PostgreSQL bytea
+						return Buffer.from(param, 'base64');
+					}
+					return param; // Use as-is
+				}
+			});
 
-      // Get client from pool and execute query
-      client = await getPool().connect();
-      const result: QueryResult = await client.query(query, parsedParams);
+			// Debug logging
+			logger.info(`Executing query: ${query}`);
+			logger.info(
+				`Parsed params (${parsedParams.length}): ${JSON.stringify(parsedParams.map((p) => (Buffer.isBuffer(p) ? `<Buffer ${p.length} bytes>` : p)))}`
+			);
 
-      // Create properly typed response
-      const response = new db_pb.StoredProcResponse();
-      response.setResult(JSON.stringify(result.rows));
-      response.setRowcount(result.rowCount || 0);
-      response.setCommand(result.command || '');
+			// Get client from pool and execute query
+			client = await getPool().connect();
+			const result: QueryResult = await client.query(query, parsedParams);
 
-      callback(null, response);
-    } catch (error: unknown) {
-      logger.error('Query execution error', error);
-      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-      callback({
-        code: grpc.status.INTERNAL,
-        details: errorMessage,
-      });
-    } finally {
-      // Always release the client back to pool
-      if (client) {
-        client.release();
-      }
-    }
-  },
+			// Create properly typed response
+			const response = new db_pb.StoredProcResponse();
+			response.setResult(JSON.stringify(result.rows));
+			response.setRowcount(result.rowCount || 0);
+			response.setCommand(result.command || '');
 
-  /**
-   * Listens to a PostgreSQL NOTIFY channel and streams notifications
-   */
-  listenToChannel: async (
-    call: grpc.ServerWritableStream<db_pb.ChannelRequest, db_pb.ChannelResponse>
-  ): Promise<void> => {
-    let client: PoolClient | null = null;
-    const request = call.request;
-    const channelName = request.getChannelname();
-    let listenerId: string | null = null;
+			callback(null, response);
+		} catch (error: unknown) {
+			logger.error('Query execution error', error);
+			const errorMessage =
+				error instanceof Error ? error.message : 'Internal server error';
+			callback({
+				code: grpc.status.INTERNAL,
+				details: errorMessage,
+			});
+		} finally {
+			// Always release the client back to pool
+			if (client) {
+				client.release();
+			}
+		}
+	},
 
-    try {
-      // Validate input
-      if (!channelName || typeof channelName !== 'string') {
-        call.emit('error', {
-          code: grpc.status.INVALID_ARGUMENT,
-          details: 'Channel name must be a non-empty string',
-        });
-        return;
-      }
+	/**
+	 * Listens to a PostgreSQL NOTIFY channel and streams notifications
+	 */
+	listenToChannel: async (
+		call: grpc.ServerWritableStream<db_pb.ChannelRequest, db_pb.ChannelResponse>
+	): Promise<void> => {
+		let client: PoolClient | null = null;
+		const request = call.request;
+		const channelName = request.getChannelname();
+		let listenerId: string | null = null;
 
-      // Validate channel name to prevent SQL injection
-      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(channelName)) {
-        call.emit('error', {
-          code: grpc.status.INVALID_ARGUMENT,
-          details: 'Invalid channel name format',
-        });
-        return;
-      }
+		try {
+			// Validate input
+			if (!channelName || typeof channelName !== 'string') {
+				call.emit('error', {
+					code: grpc.status.INVALID_ARGUMENT,
+					details: 'Channel name must be a non-empty string',
+				});
+				return;
+			}
 
-      // Get dedicated client for listening
-      client = await getPool().connect();
+			// Validate channel name to prevent SQL injection
+			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(channelName)) {
+				call.emit('error', {
+					code: grpc.status.INVALID_ARGUMENT,
+					details: 'Invalid channel name format',
+				});
+				return;
+			}
 
-      // Register for tracking
-      listenerId = registerListener(channelName, client);
+			// Get dedicated client for listening
+			client = await getPool().connect();
 
-      const channelListener = (notification: { payload?: string; channel?: string }) => {
-        try {
-          // Create properly typed response
-          const response = new db_pb.ChannelResponse();
-          response.setChannelname(channelName);
-          response.setData(JSON.stringify(notification.payload || notification));
-          response.setTimestamp(new Date().toISOString());
+			// Register for tracking
+			listenerId = registerListener(channelName, client);
 
-          call.write(response);
-        } catch (writeError) {
-          logger.error('Error writing to stream', writeError);
-        }
-      };
+			const channelListener = (notification: {
+				payload?: string;
+				channel?: string;
+			}) => {
+				try {
+					// Create properly typed response
+					const response = new db_pb.ChannelResponse();
+					response.setChannelname(channelName);
+					response.setData(
+						JSON.stringify(notification.payload || notification)
+					);
+					response.setTimestamp(new Date().toISOString());
 
-      await client.query(`LISTEN ${channelName}`);
-      client.on('notification', channelListener);
+					call.write(response);
+				} catch (writeError) {
+					logger.error('Error writing to stream', writeError);
+				}
+			};
 
-      // Handle client disconnect
-      call.on('cancelled', async () => {
-        logger.info(`Client disconnected from channel: ${channelName}`);
-        await cleanup();
-      });
+			await client.query(`LISTEN ${channelName}`);
+			client.on('notification', channelListener);
 
-      call.on('error', async (error) => {
-        logger.error('Stream error', error);
-        await cleanup();
-      });
+			// Handle client disconnect
+			call.on('cancelled', async () => {
+				logger.info(`Client disconnected from channel: ${channelName}`);
+				await cleanup();
+			});
 
-      const cleanup = async () => {
-        try {
-          if (client) {
-            await client.query(`UNLISTEN ${channelName}`);
-            client.removeAllListeners('notification');
-            client.release();
-            if (listenerId) {
-              unregisterListener(listenerId);
-            }
-          }
-        } catch (cleanupError) {
-          logger.error('Cleanup error', cleanupError);
-        }
-      };
-    } catch (error: unknown) {
-      logger.error('Channel listen error', error);
-      if (client) {
-        client.release();
-        if (listenerId) {
-          unregisterListener(listenerId);
-        }
-      }
-      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-      call.emit('error', {
-        code: grpc.status.INTERNAL,
-        details: errorMessage,
-      });
-    }
-  },
+			call.on('error', async (error) => {
+				logger.error('Stream error', error);
+				await cleanup();
+			});
+
+			const cleanup = async () => {
+				try {
+					if (client) {
+						await client.query(`UNLISTEN ${channelName}`);
+						client.removeAllListeners('notification');
+						client.release();
+						if (listenerId) {
+							unregisterListener(listenerId);
+						}
+					}
+				} catch (cleanupError) {
+					logger.error('Cleanup error', cleanupError);
+				}
+			};
+		} catch (error: unknown) {
+			logger.error('Channel listen error', error);
+			if (client) {
+				client.release();
+				if (listenerId) {
+					unregisterListener(listenerId);
+				}
+			}
+			const errorMessage =
+				error instanceof Error ? error.message : 'Internal server error';
+			call.emit('error', {
+				code: grpc.status.INTERNAL,
+				details: errorMessage,
+			});
+		}
+	},
 };
