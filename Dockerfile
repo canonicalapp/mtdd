@@ -1,44 +1,70 @@
-# Stage 1: Build
-FROM node:22-alpine AS builder
+# syntax=docker/dockerfile:1
 
-# Set the working directory
-WORKDIR /app
+# Comments are provided throughout this file to help you get started.
+# If you need more help, visit the Dockerfile reference guide at
+# https://docs.docker.com/go/dockerfile-reference/
 
-# Copy package.json and package-lock.json
-COPY package.json package-lock.json ./
+# Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
 
-# Install all dependencies (needed for build)
-RUN npm ci
+ARG NODE_VERSION=22.19.0
 
-# Copy proto files for protobuf generation
+################################################################################
+# Use node image for base image for all stages.
+FROM node:${NODE_VERSION}-alpine AS base
+
+# Set working directory for all build stages.
+WORKDIR /usr/src/app
+
+################################################################################
+# Create a stage for installing production dependecies.
+FROM base AS deps
+
+# Download dependencies AS a separate step to take advantage of Docker's caching.
+# Leverage a cache mount to /root/.npm to speed up subsequent builds.
+# Leverage bind mounts to package.json and package-lock.json to avoid having to copy them
+# into this layer.
+RUN --mount=type=bind,source=package.json,target=package.json \
+    --mount=type=bind,source=package-lock.json,target=package-lock.json \
+    --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev
+
+################################################################################
+# Create a stage for building the application.
+FROM deps AS build
+
+# Download additional development dependencies before building, AS some projects require
+# "devDependencies" to be installed to build. If you don't need this, remove this step.
+RUN --mount=type=bind,source=package.json,target=package.json \
+    --mount=type=bind,source=package-lock.json,target=package-lock.json \
+    --mount=type=cache,target=/root/.npm \
+    npm ci
+
+# Copy proto files first for protobuf generation
 COPY proto/ ./proto/
 
-# Copy source code
-COPY src/ ./src/
-COPY tsconfig.json ./
-
-# Build the application (generates protobuf files and compiles TypeScript)
+# Copy the rest of the source files into the image.
+COPY . .
+# Run the build script.
 RUN npm run build
 
-# Stage 2: Production
-FROM node:22-alpine
+################################################################################
+# Create a new stage to run the application with minimal runtime dependencies
+# where the necessary files are copied from the build stage.
+FROM base AS final
 
-# Install shadow package for user management
-RUN apk add --no-cache shadow
+# Install system dependencies
+RUN apk add --no-cache shadow su-exec
 
-# Set the working directory
-WORKDIR /app
+# Use production node environment by default.
+ENV NODE_ENV=production
 
-RUN mkdir -p /tmp/grpc
+# Copy package.json so that package manager commands can be used.
+COPY package.json .
 
-# Copy package files
-COPY package.json package-lock.json ./
-
-# Install ONLY production dependencies (no dev dependencies)
-RUN npm ci --omit=dev && npm cache clean --force
-
-# Copy only the built files from the builder stage
-COPY --from=builder /app/dist ./dist
+# Copy the production dependencies from the deps stage and also
+# the built application from the build stage into the image.
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/dist ./dist
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -46,14 +72,17 @@ COPY entrypoint.sh /entrypoint.sh
 # Make the entrypoint script executable
 RUN chmod +x /entrypoint.sh
 
-# Install su-exec for better user switching
-RUN apk add --no-cache su-exec
+# Create app directory and set permissions
+RUN mkdir -p /tmp/grpc && chown -R node:node /usr/src/app /tmp/grpc
 
-# Expose the port (if applicable)
+# Run the application AS a non-root user.
+USER node
+
+# Expose the port that the application listens on.
 EXPOSE 50051
 
 # Set the entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Command to run the application
+# Run the application.
 CMD ["node", "dist/server.js"]
