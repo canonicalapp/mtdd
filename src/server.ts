@@ -7,7 +7,7 @@
 if (process.loadEnvFile) {
 	process.loadEnvFile('.env');
 }
-
+import process from 'process';
 import * as grpc from '@grpc/grpc-js';
 import { getConfig } from './config';
 import {

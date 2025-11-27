@@ -1,6 +1,6 @@
 /**
  * gRPC service implementation for database operations
- * Uses generated protobuf types for full type safety
+ * Uses @grpc/proto-loader for runtime proto loading
  */
 
 import * as grpc from '@grpc/grpc-js';
@@ -10,32 +10,27 @@ import {
 	registerListener,
 	unregisterListener,
 } from '../db/connection';
-import type { IDBServiceServer } from '../generated/db_grpc_pb';
-import * as db_pb from '../generated/db_pb';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('DBService');
 
 /**
- * Database service implementation with full type safety from generated protobuf
+ * Database service implementation
  */
-export const dbServiceImplementation: IDBServiceServer = {
+export const dbServiceImplementation = {
 	/**
 	 * Executes a database query with parameters
 	 */
 	executeQuery: async (
-		call: grpc.ServerUnaryCall<
-			db_pb.StoredProcRequest,
-			db_pb.StoredProcResponse
-		>,
-		callback: grpc.sendUnaryData<db_pb.StoredProcResponse>
+		call: grpc.ServerUnaryCall<any, any>,
+		callback: grpc.sendUnaryData<any>
 	): Promise<void> => {
 		let client: PoolClient | null = null;
 
 		try {
 			const request = call.request;
-			const query = request.getQuery();
-			const params = request.getParamsList();
+			const query = request.query;
+			const params = request.params || [];
 
 			// Validate input
 			if (!query || typeof query !== 'string') {
@@ -56,7 +51,7 @@ export const dbServiceImplementation: IDBServiceServer = {
 
 			// Parse params - each param is a JSON-encoded string
 			// Special handling for base64-encoded buffers (bytea)
-			const parsedParams = params.map((param) => {
+			const parsedParams = params.map((param: any) => {
 				try {
 					const parsed = JSON.parse(param);
 					return parsed;
@@ -85,11 +80,12 @@ export const dbServiceImplementation: IDBServiceServer = {
 			client = await getPool().connect();
 			const result: QueryResult = await client.query(query, parsedParams);
 
-			// Create properly typed response
-			const response = new db_pb.StoredProcResponse();
-			response.setResult(JSON.stringify(result.rows));
-			response.setRowcount(result.rowCount || 0);
-			response.setCommand(result.command || '');
+			// Create response
+			const response = {
+				result: JSON.stringify(result.rows),
+				rowCount: result.rowCount || 0,
+				command: result.command || '',
+			};
 
 			callback(null, response);
 		} catch (error: unknown) {
@@ -112,11 +108,11 @@ export const dbServiceImplementation: IDBServiceServer = {
 	 * Listens to a PostgreSQL NOTIFY channel and streams notifications
 	 */
 	listenToChannel: async (
-		call: grpc.ServerWritableStream<db_pb.ChannelRequest, db_pb.ChannelResponse>
+		call: grpc.ServerWritableStream<any, any>
 	): Promise<void> => {
 		let client: PoolClient | null = null;
 		const request = call.request;
-		const channelName = request.getChannelname();
+		const channelName = request.channelName;
 		let listenerId: string | null = null;
 
 		try {
@@ -149,13 +145,12 @@ export const dbServiceImplementation: IDBServiceServer = {
 				channel?: string;
 			}) => {
 				try {
-					// Create properly typed response
-					const response = new db_pb.ChannelResponse();
-					response.setChannelname(channelName);
-					response.setData(
-						JSON.stringify(notification.payload || notification)
-					);
-					response.setTimestamp(new Date().toISOString());
+					// Create response
+					const response = {
+						channelName: channelName,
+						data: JSON.stringify(notification.payload || notification),
+						timestamp: new Date().toISOString(),
+					};
 
 					call.write(response);
 				} catch (writeError) {

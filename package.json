@@ -4,26 +4,22 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node --env-file=.env dist/server.js",
-    "build": "npm run proto:generate && tsc",
+    "build": "tsc",
     "dev": "ts-node-dev src/server.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "biome check src",
     "lint:fix": "biome check --write src",
-    "format": "biome format --write src",
-    "proto:generate": "mkdir -p src/generated && grpc_tools_node_protoc --proto_path=proto --js_out=import_style=commonjs,binary:src/generated --grpc_out=grpc_js:src/generated --plugin=protoc-gen-grpc=$(which grpc_tools_node_protoc_plugin) db.proto && grpc_tools_node_protoc --proto_path=proto --plugin=protoc-gen-ts=$(which protoc-gen-ts) --ts_out=grpc_js:src/generated db.proto"
+    "format": "biome format --write src"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.0",
-    "google-protobuf": "^4.0.0",
+    "@grpc/proto-loader": "^0.7.15",
     "pg": "^8.16.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.6",
-    "@types/google-protobuf": "^3.15.12",
     "@types/node": "^22.15.2",
     "@types/pg": "^8.15.4",
-    "grpc_tools_node_protoc_ts": "^5.3.3",
-    "grpc-tools": "^1.13.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
