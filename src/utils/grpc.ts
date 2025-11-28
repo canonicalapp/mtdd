@@ -1,30 +1,18 @@
 /**
- * gRPC service definitions using @grpc/proto-loader
- * Provides runtime loading of Protocol Buffer definitions
+ * gRPC service definitions using ts-proto generated types
+ * Provides type-safe service definitions from generated protobuf code
  */
 
-import * as grpc from '@grpc/grpc-js';
-import * as protoLoader from '@grpc/proto-loader';
-import * as path from 'path';
-
-const PROTO_PATH = path.join(__dirname, '../../proto/db.proto');
-
-const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
-	keepCase: true,
-	longs: String,
-	enums: String,
-	defaults: true,
-	oneofs: true,
-});
-
-const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any;
+import type * as grpc from '@grpc/grpc-js';
+import { type DBServiceServer, DBServiceService } from '../generated/db';
+import { dbServiceImplementation } from '../services/dbService';
 
 /**
- * Get the DBService definition from proto file
- * @returns Service definition for DBService
+ * Get the DBService definition from generated protobuf code
+ * @returns Service definition for DBService with full type safety
  */
-export function getDBServiceDefinition() {
-	return protoDescriptor.DB.DBService.service;
+export function getDBServiceDefinition(): grpc.ServiceDefinition<DBServiceServer> {
+	return DBServiceService as grpc.ServiceDefinition<DBServiceServer>;
 }
 
-export { protoDescriptor };
+export type { DBServiceServer };

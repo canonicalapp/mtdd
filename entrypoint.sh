@@ -13,15 +13,15 @@ else
 fi
 
 # Change ownership of the app directory to the user
-chown -R "$USER_NAME:$USER_NAME" /app /tmp/grpc
+chown -R "$USER_NAME:$USER_NAME" /usr/src/app /tmp/grpc
 
 # Copy .env file if it exists in the environment
 if [ -n "$ENV_FILE_CONTENT" ]; then
-    echo "$ENV_FILE_CONTENT" > /app/.env
-    chown "$USER_NAME:$USER_NAME" /app/.env
+    echo "$ENV_FILE_CONTENT" > /usr/src/app/.env
+    chown "$USER_NAME:$USER_NAME" /usr/src/app/.env
     echo "Created .env file from environment variable"
-elif [ -f "/app/.env" ]; then
-    chown "$USER_NAME:$USER_NAME" /app/.env
+elif [ -f "/usr/src/app/.env" ]; then
+    chown "$USER_NAME:$USER_NAME" /usr/src/app/.env
     echo "Using existing .env file"
 fi
 
