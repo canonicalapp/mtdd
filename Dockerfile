@@ -32,6 +32,9 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 # Create a stage for building the application.
 FROM deps AS build
 
+# Install protoc for proto generation
+RUN apk add --no-cache protoc
+
 # Download additional development dependencies before building, AS some projects require
 # "devDependencies" to be installed to build. If you don't need this, remove this step.
 RUN --mount=type=bind,source=package.json,target=package.json \
@@ -42,9 +45,13 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 # Copy proto files first for protobuf generation
 COPY proto/ ./proto/
 
+# Copy scripts directory for proto generation
+COPY scripts/ ./scripts/
+
 # Copy the rest of the source files into the image.
 COPY . .
-# Run the build script.
+
+# Run the build script (includes proto generation).
 RUN npm run build
 
 ################################################################################

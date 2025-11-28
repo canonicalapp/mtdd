@@ -3,11 +3,14 @@
  * Initializes database connection, starts gRPC server, and handles graceful shutdown
  */
 
-// Load environment variables from .env file (Node.js 21+)
-if (process.loadEnvFile) {
-	process.loadEnvFile('.env');
+// Load environment variables from .env file (for dev mode)
+// Production uses: node --env-file=.env dist/server.js
+import { config as dotenvConfig } from 'dotenv';
+
+if (process.env.NODE_ENV !== 'production') {
+	dotenvConfig();
 }
-import process from 'process';
+
 import * as grpc from '@grpc/grpc-js';
 import { getConfig } from './config';
 import {
@@ -67,7 +70,7 @@ async function main(): Promise<void> {
 		// Create and configure gRPC server
 		const server = new grpc.Server();
 
-		// Add type-safe service implementation from generated protobuf
+		// Add type-safe service implementation using ts-proto generated types
 		server.addService(getDBServiceDefinition(), dbServiceImplementation);
 
 		const bindAddress = `0.0.0.0:${config.port}`;

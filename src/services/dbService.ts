@@ -1,6 +1,6 @@
 /**
  * gRPC service implementation for database operations
- * Uses @grpc/proto-loader for runtime proto loading
+ * Uses ts-proto generated types for full type safety
  */
 
 import * as grpc from '@grpc/grpc-js';
@@ -10,20 +10,27 @@ import {
 	registerListener,
 	unregisterListener,
 } from '../db/connection';
+import type {
+	ChannelRequest,
+	ChannelResponse,
+	DBServiceServer,
+	StoredProcRequest,
+	StoredProcResponse,
+} from '../generated/db';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('DBService');
 
 /**
- * Database service implementation
+ * Database service implementation with full type safety
  */
-export const dbServiceImplementation = {
+export const dbServiceImplementation: DBServiceServer = {
 	/**
 	 * Executes a database query with parameters
 	 */
 	executeQuery: async (
-		call: grpc.ServerUnaryCall<any, any>,
-		callback: grpc.sendUnaryData<any>
+		call: grpc.ServerUnaryCall<StoredProcRequest, StoredProcResponse>,
+		callback: grpc.sendUnaryData<StoredProcResponse>
 	): Promise<void> => {
 		let client: PoolClient | null = null;
 
@@ -51,7 +58,7 @@ export const dbServiceImplementation = {
 
 			// Parse params - each param is a JSON-encoded string
 			// Special handling for base64-encoded buffers (bytea)
-			const parsedParams = params.map((param: any) => {
+			const parsedParams = params.map((param: string) => {
 				try {
 					const parsed = JSON.parse(param);
 					return parsed;
@@ -80,8 +87,8 @@ export const dbServiceImplementation = {
 			client = await getPool().connect();
 			const result: QueryResult = await client.query(query, parsedParams);
 
-			// Create response
-			const response = {
+			// Create response with type safety
+			const response: StoredProcResponse = {
 				result: JSON.stringify(result.rows),
 				rowCount: result.rowCount || 0,
 				command: result.command || '',
@@ -108,7 +115,7 @@ export const dbServiceImplementation = {
 	 * Listens to a PostgreSQL NOTIFY channel and streams notifications
 	 */
 	listenToChannel: async (
-		call: grpc.ServerWritableStream<any, any>
+		call: grpc.ServerWritableStream<ChannelRequest, ChannelResponse>
 	): Promise<void> => {
 		let client: PoolClient | null = null;
 		const request = call.request;
@@ -145,8 +152,8 @@ export const dbServiceImplementation = {
 				channel?: string;
 			}) => {
 				try {
-					// Create response
-					const response = {
+					// Create response with type safety
+					const response: ChannelResponse = {
 						channelName: channelName,
 						data: JSON.stringify(notification.payload || notification),
 						timestamp: new Date().toISOString(),
